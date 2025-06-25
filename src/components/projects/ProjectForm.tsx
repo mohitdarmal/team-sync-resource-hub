@@ -19,10 +19,11 @@ interface ProjectFormProps {
 interface RoleAssignment {
   id: string;
   roleId: string;
-  employeeIds: string[];
+  employeeId: string;
   startDate: string;
   endDate: string;
   lockType: string;
+  utilizationPercentage: number;
 }
 
 const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
@@ -56,7 +57,7 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
     },
   });
 
-  // Fetch available employees (not assigned to any active project)
+  // Fetch available employees
   const { data: availableEmployees } = useQuery({
     queryKey: ['available-employees'],
     queryFn: async () => {
@@ -86,15 +87,16 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
         description: project.description || ''
       });
 
-      // Load existing role assignments
-      if (project.project_assignments) {
+      // Load existing role assignments properly
+      if (project.project_assignments && project.project_assignments.length > 0) {
         const assignments = project.project_assignments.map((assignment: any, index: number) => ({
-          id: `${index}`,
+          id: assignment.id || `existing-${index}`,
           roleId: assignment.role_id || '',
-          employeeIds: [assignment.employee_id],
+          employeeId: assignment.employee_id || '',
           startDate: assignment.start_date || '',
           endDate: assignment.end_date || '',
-          lockType: assignment.lock_type || 'soft'
+          lockType: assignment.lock_type || 'soft',
+          utilizationPercentage: assignment.utilization_percentage || 100
         }));
         setRoleAssignments(assignments);
       }
@@ -103,10 +105,33 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
 
   const createProject = useMutation({
     mutationFn: async (data: any) => {
-      const { error } = await supabase
+      // First create the project
+      const { data: projectData, error: projectError } = await supabase
         .from('projects')
-        .insert([data]);
-      if (error) throw error;
+        .insert([data])
+        .select()
+        .single();
+      
+      if (projectError) throw projectError;
+
+      // Then create role assignments
+      if (roleAssignments.length > 0) {
+        const assignmentData = roleAssignments.map(assignment => ({
+          project_id: projectData.id,
+          role_id: assignment.roleId,
+          employee_id: assignment.employeeId,
+          start_date: assignment.startDate,
+          end_date: assignment.endDate,
+          lock_type: assignment.lockType,
+          utilization_percentage: assignment.utilizationPercentage
+        }));
+
+        const { error: assignmentError } = await supabase
+          .from('project_assignments')
+          .insert(assignmentData);
+        
+        if (assignmentError) throw assignmentError;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
@@ -127,11 +152,40 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
 
   const updateProject = useMutation({
     mutationFn: async (data: any) => {
-      const { error } = await supabase
+      // Update project details
+      const { error: projectError } = await supabase
         .from('projects')
         .update(data)
         .eq('id', project.id);
-      if (error) throw error;
+      
+      if (projectError) throw projectError;
+
+      // Delete existing assignments
+      const { error: deleteError } = await supabase
+        .from('project_assignments')
+        .delete()
+        .eq('project_id', project.id);
+      
+      if (deleteError) throw deleteError;
+
+      // Create new assignments
+      if (roleAssignments.length > 0) {
+        const assignmentData = roleAssignments.map(assignment => ({
+          project_id: project.id,
+          role_id: assignment.roleId,
+          employee_id: assignment.employeeId,
+          start_date: assignment.startDate,
+          end_date: assignment.endDate,
+          lock_type: assignment.lockType,
+          utilization_percentage: assignment.utilizationPercentage
+        }));
+
+        const { error: assignmentError } = await supabase
+          .from('project_assignments')
+          .insert(assignmentData);
+        
+        if (assignmentError) throw assignmentError;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
@@ -171,10 +225,11 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
     const newAssignment: RoleAssignment = {
       id: Date.now().toString(),
       roleId: '',
-      employeeIds: [],
-      startDate: '',
-      endDate: '',
-      lockType: 'soft'
+      employeeId: '',
+      startDate: formData.start_date,
+      endDate: formData.end_date,
+      lockType: 'soft',
+      utilizationPercentage: 100
     };
     setRoleAssignments([...roleAssignments, newAssignment]);
   };
@@ -187,16 +242,6 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
     setRoleAssignments(roleAssignments.map(assignment => 
       assignment.id === id ? { ...assignment, [field]: value } : assignment
     ));
-  };
-
-  const getAvailableEmployeesForRole = (roleId: string) => {
-    if (!availableEmployees || !roles) return [];
-    
-    const selectedRole = roles.find(role => role.id === roleId);
-    if (!selectedRole) return availableEmployees;
-    
-    // For simplicity, return all employees. In a real app, you'd filter by role compatibility
-    return availableEmployees;
   };
 
   return (
@@ -345,42 +390,26 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
                   </div>
 
                   <div className="text-left">
-                    <Label>Lock Type</Label>
+                    <Label>Select Employee</Label>
                     <Select 
-                      value={assignment.lockType} 
-                      onValueChange={(value) => updateRoleAssignment(assignment.id, 'lockType', value)}
+                      value={assignment.employeeId} 
+                      onValueChange={(value) => updateRoleAssignment(assignment.id, 'employeeId', value)}
                     >
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue placeholder="Select an employee" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="soft">Soft Lock</SelectItem>
-                        <SelectItem value="hard">Hard Lock</SelectItem>
+                        {availableEmployees?.map((employee) => (
+                          <SelectItem key={employee.id} value={employee.id}>
+                            {employee.name} - {employee.designation} ({employee.departments?.name})
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
 
-                <div className="text-left">
-                  <Label>Available Employees</Label>
-                  <Select 
-                    value={assignment.employeeIds[0] || ''} 
-                    onValueChange={(value) => updateRoleAssignment(assignment.id, 'employeeIds', [value])}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select an employee" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {getAvailableEmployeesForRole(assignment.roleId)?.map((employee) => (
-                        <SelectItem key={employee.id} value={employee.id}>
-                          {employee.name} - {employee.designation} ({employee.departments?.name})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div className="text-left">
                     <Label>Start Date</Label>
                     <Input
@@ -397,6 +426,32 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
                       onChange={(e) => updateRoleAssignment(assignment.id, 'endDate', e.target.value)}
                     />
                   </div>
+                  <div className="text-left">
+                    <Label>Utilization %</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={assignment.utilizationPercentage}
+                      onChange={(e) => updateRoleAssignment(assignment.id, 'utilizationPercentage', parseInt(e.target.value))}
+                    />
+                  </div>
+                </div>
+
+                <div className="text-left">
+                  <Label>Lock Type</Label>
+                  <Select 
+                    value={assignment.lockType} 
+                    onValueChange={(value) => updateRoleAssignment(assignment.id, 'lockType', value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="soft">Soft Lock</SelectItem>
+                      <SelectItem value="hard">Hard Lock</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             ))}
