@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -56,7 +55,7 @@ const ResourcesTab = () => {
   });
 
   const updateLockType = useMutation({
-    mutationFn: async ({ assignmentId, lockType }: { assignmentId: string, lockType: string }) => {
+    mutationFn: async ({ assignmentId, lockType }: { assignmentId: string, lockType: 'hard' | 'soft' }) => {
       const { error } = await supabase
         .from('project_assignments')
         .update({ lock_type: lockType })
@@ -129,7 +128,7 @@ const ResourcesTab = () => {
   };
 
   const handleLockTypeChange = (assignmentId: string, newLockType: string) => {
-    updateLockType.mutate({ assignmentId, lockType: newLockType });
+    updateLockType.mutate({ assignmentId, lockType: newLockType as 'hard' | 'soft' });
   };
 
   const handleReleaseResource = (assignmentId: string) => {

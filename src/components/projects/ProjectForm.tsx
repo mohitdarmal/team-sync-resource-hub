@@ -22,7 +22,7 @@ interface RoleAssignment {
   employeeId: string;
   startDate: string;
   endDate: string;
-  lockType: string;
+  lockType: 'hard' | 'soft';
   utilizationPercentage: number;
 }
 
@@ -95,7 +95,7 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
           employeeId: assignment.employee_id || '',
           startDate: assignment.start_date || '',
           endDate: assignment.end_date || '',
-          lockType: assignment.lock_type || 'soft',
+          lockType: (assignment.lock_type || 'soft') as 'hard' | 'soft',
           utilizationPercentage: assignment.utilization_percentage || 100
         }));
         setRoleAssignments(assignments);
@@ -122,7 +122,7 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
           employee_id: assignment.employeeId,
           start_date: assignment.startDate,
           end_date: assignment.endDate,
-          lock_type: assignment.lockType,
+          lock_type: assignment.lockType as 'hard' | 'soft',
           utilization_percentage: assignment.utilizationPercentage
         }));
 
@@ -176,7 +176,7 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
           employee_id: assignment.employeeId,
           start_date: assignment.startDate,
           end_date: assignment.endDate,
-          lock_type: assignment.lockType,
+          lock_type: assignment.lockType as 'hard' | 'soft',
           utilization_percentage: assignment.utilizationPercentage
         }));
 
@@ -240,7 +240,10 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
 
   const updateRoleAssignment = (id: string, field: string, value: any) => {
     setRoleAssignments(roleAssignments.map(assignment => 
-      assignment.id === id ? { ...assignment, [field]: value } : assignment
+      assignment.id === id ? { 
+        ...assignment, 
+        [field]: field === 'lockType' ? value as 'hard' | 'soft' : value 
+      } : assignment
     ));
   };
 
