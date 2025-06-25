@@ -76,7 +76,7 @@ const ResourcesTab = () => {
         ))}
       </div>
     );
-  }
+  };
 
   return (
     <div className="space-y-6">
@@ -116,7 +116,7 @@ const ResourcesTab = () => {
                   <div>
                     <p className="font-medium text-gray-900">{assignment.project?.name}</p>
                     <p className="text-sm text-gray-600">ID: {assignment.project?.project_id}</p>
-                    <Badge className={getStatusColor(assignment.project?.status || 'active')} size="sm">
+                    <Badge className={getStatusColor(assignment.project?.status || 'active')}>
                       {assignment.project?.status?.replace('_', ' ')}
                     </Badge>
                   </div>
@@ -134,7 +134,7 @@ const ResourcesTab = () => {
 
                   {/* Lock Status */}
                   <div className="flex flex-col items-end">
-                    <Badge className={getLockTypeColor(assignment.lock_type)} size="sm">
+                    <Badge className={getLockTypeColor(assignment.lock_type)}>
                       {assignment.lock_type === 'hard' ? (
                         <Lock className="h-3 w-3 mr-1" />
                       ) : (
