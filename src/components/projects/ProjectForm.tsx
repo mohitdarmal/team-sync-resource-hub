@@ -9,10 +9,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Plus, Trash2 } from 'lucide-react';
 
 interface ProjectFormProps {
   project?: any;
   onClose: () => void;
+}
+
+interface RoleAssignment {
+  id: string;
+  roleId: string;
+  employeeIds: string[];
+  startDate: string;
+  endDate: string;
+  lockType: string;
 }
 
 const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
@@ -27,8 +37,41 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
     description: ''
   });
 
+  const [roleAssignments, setRoleAssignments] = useState<RoleAssignment[]>([]);
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Fetch roles
+  const { data: roles } = useQuery({
+    queryKey: ['roles'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('roles')
+        .select('*')
+        .order('name');
+      
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Fetch available employees (not assigned to any active project)
+  const { data: availableEmployees } = useQuery({
+    queryKey: ['available-employees'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('employees')
+        .select(`
+          *,
+          departments (name)
+        `)
+        .order('name');
+      
+      if (error) throw error;
+      return data;
+    },
+  });
 
   useEffect(() => {
     if (project) {
@@ -42,6 +85,19 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
         completion_percentage: project.completion_percentage || 0,
         description: project.description || ''
       });
+
+      // Load existing role assignments
+      if (project.project_assignments) {
+        const assignments = project.project_assignments.map((assignment: any, index: number) => ({
+          id: `${index}`,
+          roleId: assignment.role_id || '',
+          employeeIds: [assignment.employee_id],
+          startDate: assignment.start_date || '',
+          endDate: assignment.end_date || '',
+          lockType: assignment.lock_type || 'soft'
+        }));
+        setRoleAssignments(assignments);
+      }
     }
   }, [project]);
 
@@ -111,18 +167,50 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
     }));
   };
 
+  const addRoleAssignment = () => {
+    const newAssignment: RoleAssignment = {
+      id: Date.now().toString(),
+      roleId: '',
+      employeeIds: [],
+      startDate: '',
+      endDate: '',
+      lockType: 'soft'
+    };
+    setRoleAssignments([...roleAssignments, newAssignment]);
+  };
+
+  const removeRoleAssignment = (id: string) => {
+    setRoleAssignments(roleAssignments.filter(assignment => assignment.id !== id));
+  };
+
+  const updateRoleAssignment = (id: string, field: string, value: any) => {
+    setRoleAssignments(roleAssignments.map(assignment => 
+      assignment.id === id ? { ...assignment, [field]: value } : assignment
+    ));
+  };
+
+  const getAvailableEmployeesForRole = (roleId: string) => {
+    if (!availableEmployees || !roles) return [];
+    
+    const selectedRole = roles.find(role => role.id === roleId);
+    if (!selectedRole) return availableEmployees;
+    
+    // For simplicity, return all employees. In a real app, you'd filter by role compatibility
+    return availableEmployees;
+  };
+
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className="text-left">
             {project ? 'Edit Project' : 'Add New Project'}
           </DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-2 gap-4">
-            <div>
+            <div className="text-left">
               <Label htmlFor="project_id">Project ID</Label>
               <Input
                 id="project_id"
@@ -131,7 +219,7 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
                 required
               />
             </div>
-            <div>
+            <div className="text-left">
               <Label htmlFor="name">Project Name</Label>
               <Input
                 id="name"
@@ -142,7 +230,7 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
             </div>
           </div>
 
-          <div>
+          <div className="text-left">
             <Label htmlFor="client_name">Client Name</Label>
             <Input
               id="client_name"
@@ -153,7 +241,7 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div>
+            <div className="text-left">
               <Label htmlFor="start_date">Start Date</Label>
               <Input
                 id="start_date"
@@ -163,7 +251,7 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
                 required
               />
             </div>
-            <div>
+            <div className="text-left">
               <Label htmlFor="end_date">End Date</Label>
               <Input
                 id="end_date"
@@ -176,7 +264,7 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div>
+            <div className="text-left">
               <Label htmlFor="status">Status</Label>
               <Select value={formData.status} onValueChange={(value) => handleInputChange('status', value)}>
                 <SelectTrigger>
@@ -189,7 +277,7 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
                 </SelectContent>
               </Select>
             </div>
-            <div>
+            <div className="text-left">
               <Label htmlFor="completion_percentage">Completion %</Label>
               <Input
                 id="completion_percentage"
@@ -202,7 +290,7 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
             </div>
           </div>
 
-          <div>
+          <div className="text-left">
             <Label htmlFor="description">Description</Label>
             <Textarea
               id="description"
@@ -210,6 +298,108 @@ const ProjectForm = ({ project, onClose }: ProjectFormProps) => {
               onChange={(e) => handleInputChange('description', e.target.value)}
               rows={3}
             />
+          </div>
+
+          {/* Role Assignments Section */}
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <Label className="text-lg font-semibold">Role Assignments</Label>
+              <Button type="button" variant="outline" onClick={addRoleAssignment}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Role
+              </Button>
+            </div>
+
+            {roleAssignments.map((assignment, index) => (
+              <div key={assignment.id} className="border rounded-lg p-4 space-y-4">
+                <div className="flex justify-between items-center">
+                  <h4 className="font-medium">Role Assignment #{index + 1}</h4>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => removeRoleAssignment(assignment.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="text-left">
+                    <Label>Select Role</Label>
+                    <Select 
+                      value={assignment.roleId} 
+                      onValueChange={(value) => updateRoleAssignment(assignment.id, 'roleId', value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a role" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {roles?.map((role) => (
+                          <SelectItem key={role.id} value={role.id}>
+                            {role.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="text-left">
+                    <Label>Lock Type</Label>
+                    <Select 
+                      value={assignment.lockType} 
+                      onValueChange={(value) => updateRoleAssignment(assignment.id, 'lockType', value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="soft">Soft Lock</SelectItem>
+                        <SelectItem value="hard">Hard Lock</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="text-left">
+                  <Label>Available Employees</Label>
+                  <Select 
+                    value={assignment.employeeIds[0] || ''} 
+                    onValueChange={(value) => updateRoleAssignment(assignment.id, 'employeeIds', [value])}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select an employee" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getAvailableEmployeesForRole(assignment.roleId)?.map((employee) => (
+                        <SelectItem key={employee.id} value={employee.id}>
+                          {employee.name} - {employee.designation} ({employee.departments?.name})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="text-left">
+                    <Label>Start Date</Label>
+                    <Input
+                      type="date"
+                      value={assignment.startDate}
+                      onChange={(e) => updateRoleAssignment(assignment.id, 'startDate', e.target.value)}
+                    />
+                  </div>
+                  <div className="text-left">
+                    <Label>End Date</Label>
+                    <Input
+                      type="date"
+                      value={assignment.endDate}
+                      onChange={(e) => updateRoleAssignment(assignment.id, 'endDate', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
 
           <div className="flex justify-end space-x-2 pt-4">

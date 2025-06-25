@@ -3,14 +3,18 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Plus, Edit, Trash2, Users } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 import ProjectForm from './ProjectForm';
 
 const ProjectsTab = () => {
   const [showProjectForm, setShowProjectForm] = useState(false);
   const [editingProject, setEditingProject] = useState(null);
+
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data: projects, isLoading, refetch } = useQuery({
     queryKey: ['projects'],
@@ -36,6 +40,30 @@ const ProjectsTab = () => {
     },
   });
 
+  const deleteProject = useMutation({
+    mutationFn: async (projectId: string) => {
+      const { error } = await supabase
+        .from('projects')
+        .delete()
+        .eq('id', projectId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      toast({
+        title: "Project deleted successfully",
+        description: "The project has been removed from your workspace.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error deleting project",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active':
@@ -56,6 +84,12 @@ const ProjectsTab = () => {
   const handleEdit = (project: any) => {
     setEditingProject(project);
     setShowProjectForm(true);
+  };
+
+  const handleDelete = (projectId: string) => {
+    if (window.confirm('Are you sure you want to delete this project?')) {
+      deleteProject.mutate(projectId);
+    }
   };
 
   const handleCloseForm = () => {
@@ -82,7 +116,10 @@ const ProjectsTab = () => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-900">Projects</h2>
+        <div className="text-left">
+          <h2 className="text-2xl font-bold text-gray-900">Projects</h2>
+          <p className="text-gray-600">Manage your projects and team assignments</p>
+        </div>
         <Button onClick={() => setShowProjectForm(true)}>
           <Plus className="h-4 w-4 mr-2" />
           Add New Project
@@ -94,7 +131,7 @@ const ProjectsTab = () => {
           <Card key={project.id} className="hover:shadow-md transition-shadow">
             <CardHeader>
               <div className="flex items-start justify-between">
-                <div>
+                <div className="text-left">
                   <CardTitle className="text-xl">{project.name}</CardTitle>
                   <p className="text-gray-600 mt-1">{project.client_name}</p>
                   <p className="text-sm text-gray-500 mt-1">Project ID: {project.project_id}</p>
@@ -107,7 +144,12 @@ const ProjectsTab = () => {
                     <Edit className="h-4 w-4 mr-1" />
                     Edit
                   </Button>
-                  <Button variant="outline" size="sm">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => handleDelete(project.id)}
+                    disabled={deleteProject.isPending}
+                  >
                     <Trash2 className="h-4 w-4 mr-1" />
                     Delete
                   </Button>
@@ -116,20 +158,20 @@ const ProjectsTab = () => {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                <div>
+                <div className="text-left">
                   <p className="text-sm font-medium text-gray-600">Timeline</p>
                   <p className="text-sm text-gray-900">
                     {new Date(project.start_date).toLocaleDateString()} - {new Date(project.end_date).toLocaleDateString()}
                   </p>
                 </div>
-                <div>
+                <div className="text-left">
                   <p className="text-sm font-medium text-gray-600">Team Members</p>
                   <p className="text-sm text-gray-900 flex items-center">
                     <Users className="h-4 w-4 mr-1" />
                     {project.project_assignments?.length || 0}
                   </p>
                 </div>
-                <div>
+                <div className="text-left">
                   <p className="text-sm font-medium text-gray-600">Completion</p>
                   <div className="flex items-center space-x-2">
                     <div className="flex-1 bg-gray-200 rounded-full h-2">
@@ -141,19 +183,19 @@ const ProjectsTab = () => {
                     <span className="text-sm text-gray-900">{project.completion_percentage}%</span>
                   </div>
                 </div>
-                <div>
+                <div className="text-left">
                   <p className="text-sm font-medium text-gray-600">Due Date</p>
                   <p className="text-sm text-gray-900">{new Date(project.end_date).toLocaleDateString()}</p>
                 </div>
               </div>
 
               {project.project_assignments?.length > 0 && (
-                <div>
+                <div className="text-left">
                   <h4 className="font-medium text-gray-900 mb-3">Team Assignments</h4>
                   <div className="space-y-2">
                     {project.project_assignments.map((assignment: any) => (
                       <div key={assignment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex-1">
+                        <div className="flex-1 text-left">
                           <p className="font-medium text-gray-900">{assignment.employee?.name}</p>
                           <p className="text-sm text-gray-600">{assignment.role?.name}</p>
                           <p className="text-xs text-gray-500">
@@ -173,9 +215,28 @@ const ProjectsTab = () => {
                   </div>
                 </div>
               )}
+
+              {project.description && (
+                <div className="mt-4 text-left">
+                  <p className="text-sm font-medium text-gray-600 mb-1">Description</p>
+                  <p className="text-sm text-gray-900">{project.description}</p>
+                </div>
+              )}
             </CardContent>
           </Card>
         ))}
+
+        {projects?.length === 0 && (
+          <Card>
+            <CardContent className="p-12 text-center">
+              <p className="text-gray-500">No projects found</p>
+              <Button className="mt-4" onClick={() => setShowProjectForm(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Create Your First Project
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {showProjectForm && (
