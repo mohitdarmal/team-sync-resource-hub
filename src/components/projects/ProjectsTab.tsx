@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, Edit, Trash2, Users } from 'lucide-react';
+import { Plus, Edit, Trash2, Users, Lock, Unlock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import ProjectForm from './ProjectForm';
 
@@ -25,12 +25,22 @@ const ProjectsTab = () => {
           *,
           project_assignments (
             id,
-            employee:employees (name),
-            role:roles (name),
+            employee_id,
+            role_id,
             start_date,
             end_date,
             lock_type,
-            utilization_percentage
+            utilization_percentage,
+            employee:employees (
+              id,
+              name,
+              designation,
+              departments (name)
+            ),
+            role:roles (
+              id,
+              name
+            )
           )
         `)
         .order('created_at', { ascending: false });
@@ -192,23 +202,41 @@ const ProjectsTab = () => {
               {project.project_assignments?.length > 0 && (
                 <div className="text-left">
                   <h4 className="font-medium text-gray-900 mb-3">Team Assignments</h4>
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {project.project_assignments.map((assignment: any) => (
-                      <div key={assignment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div key={assignment.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border">
                         <div className="flex-1 text-left">
-                          <p className="font-medium text-gray-900">{assignment.employee?.name}</p>
-                          <p className="text-sm text-gray-600">{assignment.role?.name}</p>
-                          <p className="text-xs text-gray-500">
-                            {new Date(assignment.start_date).toLocaleDateString()} - {new Date(assignment.end_date).toLocaleDateString()}
+                          <div className="flex items-center space-x-3">
+                            <div>
+                              <p className="font-medium text-gray-900">{assignment.employee?.name}</p>
+                              <p className="text-sm text-gray-600">{assignment.employee?.designation}</p>
+                              <p className="text-xs text-gray-500">{assignment.employee?.departments?.name}</p>
+                            </div>
+                            <div>
+                              <Badge variant="secondary" className="text-xs">
+                                {assignment.role?.name}
+                              </Badge>
+                            </div>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-2">
+                            Assignment: {new Date(assignment.start_date).toLocaleDateString()} - {new Date(assignment.end_date).toLocaleDateString()}
                           </p>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <Badge className={getLockTypeColor(assignment.lock_type)}>
+                        <div className="flex items-center space-x-3">
+                          <Badge className={getLockTypeColor(assignment.lock_type)} variant="outline">
+                            {assignment.lock_type === 'hard' ? (
+                              <Lock className="h-3 w-3 mr-1" />
+                            ) : (
+                              <Unlock className="h-3 w-3 mr-1" />
+                            )}
                             {assignment.lock_type} lock
                           </Badge>
-                          <span className="text-sm font-medium text-gray-900">
-                            {assignment.utilization_percentage}%
-                          </span>
+                          <div className="text-right">
+                            <span className="text-sm font-medium text-gray-900">
+                              {assignment.utilization_percentage}%
+                            </span>
+                            <p className="text-xs text-gray-500">utilization</p>
+                          </div>
                         </div>
                       </div>
                     ))}

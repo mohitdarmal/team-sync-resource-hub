@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 
 const ResourcesTab = () => {
   const [filterRole, setFilterRole] = useState('all');
+  const [filterDepartment, setFilterDepartment] = useState('all');
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -21,18 +23,28 @@ const ResourcesTab = () => {
         .select(`
           *,
           employee:employees (
+            id,
             name, 
             designation, 
-            departments (name)
+            employee_id,
+            departments (
+              id,
+              name
+            )
           ),
           project:projects (
+            id,
             name, 
             project_id, 
             status,
             start_date,
-            end_date
+            end_date,
+            client_name
           ),
-          role:roles (name)
+          role:roles (
+            id,
+            name
+          )
         `)
         .order('created_at', { ascending: false });
       
@@ -46,6 +58,19 @@ const ResourcesTab = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('roles')
+        .select('*')
+        .order('name');
+      
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: departments } = useQuery({
+    queryKey: ['departments'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('departments')
         .select('*')
         .order('name');
       
@@ -137,9 +162,24 @@ const ResourcesTab = () => {
     }
   };
 
-  const filteredAssignments = assignments?.filter(assignment => 
-    filterRole === 'all' || assignment.role?.name === filterRole
-  );
+  // Group assignments by employee to handle multiple project assignments
+  const groupedAssignments = assignments?.reduce((acc: any, assignment) => {
+    const employeeId = assignment.employee_id;
+    if (!acc[employeeId]) {
+      acc[employeeId] = {
+        employee: assignment.employee,
+        assignments: []
+      };
+    }
+    acc[employeeId].assignments.push(assignment);
+    return acc;
+  }, {});
+
+  const filteredGroupedAssignments = Object.values(groupedAssignments || {}).filter((group: any) => {
+    const matchesRole = filterRole === 'all' || group.assignments.some((assignment: any) => assignment.role?.name === filterRole);
+    const matchesDepartment = filterDepartment === 'all' || group.employee?.departments?.name === filterDepartment;
+    return matchesRole && matchesDepartment;
+  });
 
   if (isLoading) {
     return (
@@ -177,72 +217,105 @@ const ResourcesTab = () => {
               ))}
             </SelectContent>
           </Select>
+          <Select value={filterDepartment} onValueChange={setFilterDepartment}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Filter by Department" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Departments</SelectItem>
+              {departments?.map((department) => (
+                <SelectItem key={department.id} value={department.name}>
+                  {department.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Resource Assignments</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {filteredAssignments?.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">No resource assignments found</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-2">Resource Details</th>
-                    <th className="text-left py-3 px-2">Project Information</th>
-                    <th className="text-left py-3 px-2">Assignment Timeline</th>
-                    <th className="text-left py-3 px-2">Utilization</th>
-                    <th className="text-left py-3 px-2">Lock Status</th>
-                    <th className="text-left py-3 px-2">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredAssignments?.map((assignment) => (
-                    <tr key={assignment.id} className="border-b hover:bg-gray-50">
-                      <td className="py-4 px-2">
-                        <div>
-                          <div className="font-semibold text-gray-900">{assignment.employee?.name}</div>
-                          <div className="text-sm text-gray-600">{assignment.employee?.designation}</div>
-                          <div className="text-sm text-gray-500">{assignment.employee?.departments?.name}</div>
-                          <div className="text-sm font-medium text-blue-600">{assignment.role?.name}</div>
-                        </div>
-                      </td>
-                      <td className="py-4 px-2">
-                        <div>
-                          <div className="font-medium text-gray-900">{assignment.project?.name}</div>
-                          <div className="text-sm text-gray-600">ID: {assignment.project?.project_id}</div>
-                          <Badge className={getStatusColor(assignment.project?.status || 'active')}>
+      <div className="space-y-4">
+        {filteredGroupedAssignments?.length === 0 ? (
+          <Card>
+            <CardContent className="p-8 text-center">
+              <p className="text-gray-500">No resource assignments found</p>
+            </CardContent>
+          </Card>
+        ) : (
+          filteredGroupedAssignments?.map((group: any) => (
+            <Card key={group.employee.id} className="hover:shadow-md transition-shadow">
+              <CardHeader className="pb-4">
+                <div className="flex items-start justify-between">
+                  <div className="text-left">
+                    <CardTitle className="text-lg font-semibold text-gray-900">
+                      {group.employee.name}
+                    </CardTitle>
+                    <p className="text-sm text-gray-600">{group.employee.designation}</p>
+                    <p className="text-sm text-gray-500">{group.employee.departments?.name}</p>
+                    <p className="text-xs text-gray-400">Employee ID: {group.employee.employee_id}</p>
+                  </div>
+                  <Badge variant="outline" className="text-xs">
+                    {group.assignments.length} Project{group.assignments.length > 1 ? 's' : ''}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {group.assignments.map((assignment: any) => (
+                    <div key={assignment.id} className="border rounded-lg p-4 bg-gray-50">
+                      <div className="grid grid-cols-1 lg:grid-cols-6 gap-4 items-start">
+                        {/* Project Information */}
+                        <div className="lg:col-span-2 text-left">
+                          <h4 className="font-medium text-gray-900">{assignment.project?.name}</h4>
+                          <p className="text-sm text-gray-600">ID: {assignment.project?.project_id}</p>
+                          <p className="text-sm text-gray-600">Client: {assignment.project?.client_name}</p>
+                          <Badge className={getStatusColor(assignment.project?.status || 'active')} variant="outline">
                             {assignment.project?.status?.replace('_', ' ')}
                           </Badge>
                         </div>
-                      </td>
-                      <td className="py-4 px-2">
-                        <div className="text-sm">
-                          <div><strong>Assignment:</strong></div>
-                          <div>{new Date(assignment.start_date).toLocaleDateString()} - {new Date(assignment.end_date).toLocaleDateString()}</div>
-                          <div className="mt-1"><strong>Project:</strong></div>
-                          <div>{new Date(assignment.project?.start_date).toLocaleDateString()} - {new Date(assignment.project?.end_date).toLocaleDateString()}</div>
+
+                        {/* Role & Timeline */}
+                        <div className="text-left">
+                          <p className="text-sm font-medium text-blue-600">{assignment.role?.name}</p>
+                          <div className="text-xs text-gray-500 mt-1">
+                            <p><strong>Assignment:</strong></p>
+                            <p>{new Date(assignment.start_date).toLocaleDateString()}</p>
+                            <p>to {new Date(assignment.end_date).toLocaleDateString()}</p>
+                          </div>
                         </div>
-                      </td>
-                      <td className="py-4 px-2">
-                        <div className={`font-medium ${getUtilizationColor(assignment.utilization_percentage || 0)}`}>
-                          {assignment.utilization_percentage}%
+
+                        {/* Project Timeline */}
+                        <div className="text-left">
+                          <p className="text-xs text-gray-500">
+                            <strong>Project Timeline:</strong>
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(assignment.project?.start_date).toLocaleDateString()}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            to {new Date(assignment.project?.end_date).toLocaleDateString()}
+                          </p>
                         </div>
-                      </td>
-                      <td className="py-4 px-2">
-                        <div className="space-y-2">
-                          <Badge className={getLockTypeColor(assignment.lock_type)}>
-                            {assignment.lock_type === 'hard' ? (
-                              <Lock className="h-3 w-3 mr-1" />
-                            ) : (
-                              <Unlock className="h-3 w-3 mr-1" />
-                            )}
-                            {assignment.lock_type} lock
-                          </Badge>
+
+                        {/* Utilization */}
+                        <div className="text-left">
+                          <p className="text-xs text-gray-500 mb-1">Utilization</p>
+                          <div className={`font-medium ${getUtilizationColor(assignment.utilization_percentage || 0)}`}>
+                            {assignment.utilization_percentage}%
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex flex-col space-y-2">
+                          <div className="flex items-center space-x-2">
+                            <Badge className={getLockTypeColor(assignment.lock_type)} variant="outline">
+                              {assignment.lock_type === 'hard' ? (
+                                <Lock className="h-3 w-3 mr-1" />
+                              ) : (
+                                <Unlock className="h-3 w-3 mr-1" />
+                              )}
+                              {assignment.lock_type}
+                            </Badge>
+                          </div>
                           <Select 
                             value={assignment.lock_type} 
                             onValueChange={(value) => handleLockTypeChange(assignment.id, value)}
@@ -255,33 +328,26 @@ const ResourcesTab = () => {
                               <SelectItem value="hard">Hard</SelectItem>
                             </SelectContent>
                           </Select>
-                        </div>
-                      </td>
-                      <td className="py-4 px-2">
-                        <div className="flex flex-col space-y-2">
                           <Button 
                             variant="outline" 
                             size="sm"
                             onClick={() => handleReleaseResource(assignment.id)}
                             disabled={releaseResource.isPending}
+                            className="text-xs"
                           >
-                            <UserMinus className="h-4 w-4 mr-1" />
+                            <UserMinus className="h-3 w-3 mr-1" />
                             Release
                           </Button>
-                          <Button variant="outline" size="sm">
-                            <Edit className="h-4 w-4 mr-1" />
-                            Edit
-                          </Button>
                         </div>
-                      </td>
-                    </tr>
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
     </div>
   );
 };
